@@ -10,9 +10,9 @@ import java.util.Objects;
  */
 @Entity
 @Table(name = "content", indexes = {
-    @Index(name = "idx_title", columnList = "title"),
-    @Index(name = "idx_content_type", columnList = "content_type"),
-    @Index(name = "idx_created_at", columnList = "created_at")
+        @Index(name = "idx_title", columnList = "title"),
+        @Index(name = "idx_content_type", columnList = "content_type"),
+        @Index(name = "idx_created_at", columnList = "created_at")
 })
 public class Content {
 
@@ -159,13 +159,14 @@ public class Content {
     }
 
     // Constructors
-    public Content() {}
+    public Content() {
+    }
 
     public Content(Long id, String title, String description, ContentType contentType, String contentUrl,
-                   Integer durationMinutes, String genre, LocalDateTime releaseDate, Double rating,
-                   String thumbnailUrl, String language, String director, String cast, Boolean isAvailable,
-                   Boolean isPremium, Long viewCount, Long likesCount, LocalDateTime createdAt,
-                   LocalDateTime updatedAt) {
+            Integer durationMinutes, String genre, LocalDateTime releaseDate, Double rating,
+            String thumbnailUrl, String language, String director, String cast, Boolean isAvailable,
+            Boolean isPremium, Long viewCount, Long likesCount, LocalDateTime createdAt,
+            LocalDateTime updatedAt) {
         this.id = id;
         this.title = title;
         this.description = description;
@@ -367,8 +368,10 @@ public class Content {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o)
+            return true;
+        if (o == null || getClass() != o.getClass())
+            return false;
         Content content = (Content) o;
         return Objects.equals(id, content.id);
     }

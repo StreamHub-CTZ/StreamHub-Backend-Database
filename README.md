@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # StreamHub Backend - Spring Boot Application
 
 A comprehensive REST API backend for the StreamHub content management system built with Spring Boot, MySQL, and JPA/Hibernate.
@@ -408,3 +409,6 @@ For issues or questions:
 2. Review application logs in console
 3. Check MySQL error logs
 4. Verify database configuration
+=======
+# StreamHub-Backend-Database
+>>>>>>> 30f6ee7c5c217cd31b3e9c28cd65c3a67f446fc2

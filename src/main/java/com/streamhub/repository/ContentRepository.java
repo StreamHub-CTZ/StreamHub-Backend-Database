@@ -66,7 +66,7 @@ public interface ContentRepository extends JpaRepository<Content, Long> {
      * @param limit Maximum number of results
      * @return List of highest rated content
      */
-    @Query(value = "SELECT * FROM content WHERE is_available = :isAvailable ORDER BY rating DESC LIMIT :limit", 
+    @Query(value = "SELECT * FROM content WHERE is_available = :isAvailable ORDER BY rating DESC LIMIT ?2", 
            nativeQuery = true)
     List<Content> findTopRatedContent(@Param("isAvailable") Boolean isAvailable, @Param("limit") int limit);
 
