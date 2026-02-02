@@ -1,102 +1,234 @@
--- ============================================
--- StreamHub Database Schema
--- MySQL Script to create the Content Table
--- ============================================
+/*
+================================================================================
+PROJECT: StreamHub - Digital Content Distribution & Subscription Management
+VERSION: 1.1.0
+MODULES: IAM, Content, Subscription, Billing, Access Control, Analytics
+STANDARDS: MySQL 8.0+, InnoDB, utf8mb4, Snake_Case, Audit Columns, RBAC
+================================================================================
 
--- Create Database (if not exists)
-CREATE DATABASE IF NOT EXISTS streamhub_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+TABLE PURPOSES:
+1. role: Defines RBAC permissions (Admin, Subscriber, etc.).
+2. app_user: Central identity store for all system users.
+3. user_role: Many-to-many mapping for users and their permissions.
+4. content: Central catalog for videos, audio, and ebooks with JSON metadata.
+5. subscription_plan: Product catalog defining prices and durations.
+6. subscription: Tracks active user contracts and expiration dates.
+7. payment_transaction: Detailed billing history and payment gateway responses.
+8. access_control_log: High-performance log for DRM and content access attempts.
+9. revenue_report: Aggregated financial metrics for management dashboards.
+10. system_audit_log: Low-level tracking of data changes for compliance.
+*/
 
--- Use the database
+CREATE DATABASE IF NOT EXISTS streamhub_db;
 USE streamhub_db;
 
--- ============================================
--- Content Table
--- ============================================
--- This table stores all streaming content (movies, music, ebooks, etc.)
+SET foreign_key_checks = 0;
+
+-- -----------------------------------------------------------------------------
+-- SECTION 1: IDENTITY & ACCESS MANAGEMENT (IAM)
+-- -----------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS role (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    role_name VARCHAR(50) NOT NULL UNIQUE,
+    description TEXT,
+    version_id INT UNSIGNED DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    created_by VARCHAR(255),
+    updated_by VARCHAR(255)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS app_user (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(100) NOT NULL UNIQUE,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    status ENUM('PENDING', 'ACTIVE', 'SUSPENDED', 'DELETED') DEFAULT 'ACTIVE',
+    version_id INT UNSIGNED DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    created_by VARCHAR(255),
+    updated_by VARCHAR(255),
+    INDEX idx_user_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS user_role (
+    user_id BIGINT UNSIGNED NOT NULL,
+    role_id BIGINT UNSIGNED NOT NULL,
+    PRIMARY KEY (user_id, role_id),
+    CONSTRAINT fk_ur_user FOREIGN KEY (user_id) REFERENCES app_user(id) ON DELETE CASCADE,
+    CONSTRAINT fk_ur_role FOREIGN KEY (role_id) REFERENCES role(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- -----------------------------------------------------------------------------
+-- SECTION 2: CONTENT & METADATA MANAGEMENT
+-- -----------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS content (
-    -- Primary Key
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    
-    -- Content Metadata
-    title VARCHAR(255) NOT NULL UNIQUE KEY,
-    description LONGTEXT,
-    content_type ENUM('MOVIE', 'MUSIC', 'EBOOK', 'SERIES', 'PODCAST', 'DOCUMENTARY', 'STAND_UP') NOT NULL,
-    
-    -- Content URL and Media
-    content_url VARCHAR(500) NOT NULL,
-    duration_minutes INT,
-    thumbnail_url VARCHAR(500),
-    
-    -- Content Details
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    content_type ENUM('VIDEO', 'AUDIO', 'EBOOK') NOT NULL,
     genre VARCHAR(100),
-    release_date DATETIME,
-    rating DECIMAL(3, 1) COMMENT 'Rating out of 10',
     language VARCHAR(50),
-    director VARCHAR(255),
-    cast LONGTEXT COMMENT 'Cast members (JSON or comma-separated)',
-    
-    -- -- Status and Availability
-    -- is_available BOOLEAN NOT NULL DEFAULT TRUE,
-    -- is_premium BOOLEAN NOT NULL DEFAULT FALSE,
-    
-    -- -- Analytics
-    -- view_count BIGINT DEFAULT 0,
-    -- likes_count BIGINT DEFAULT 0,
-    
-    -- Timestamps
-    created_at DATETIME NOT NULL,
-    updated_at DATETIME,
-    
-    -- Indexes for faster queries
-    KEY idx_title (title),
-    KEY idx_content_type (content_type),
-    KEY idx_created_at (created_at),
-    KEY idx_genre (genre),
-    KEY idx_is_available (is_available),
-    KEY idx_is_premium (is_premium)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    metadata JSON,
+    rating VARCHAR(50),
+    thumbnail_url LONGTEXT,
+    duration INT,
+    status ENUM('ACTIVE', 'ARCHIVED', 'DRAFT') DEFAULT 'ACTIVE',
+    version_id INT UNSIGNED DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    created_by VARCHAR(255),
+    updated_by VARCHAR(255),
+    FULLTEXT INDEX ft_content_search (title, genre),
+    INDEX idx_content_type (content_type),
+    INDEX idx_status (status),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- ============================================
--- Sample Data (Optional - for testing)
--- ============================================
+-- For VIDEO type content
+CREATE TABLE IF NOT EXISTS video_metadata (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    content_id BIGINT UNSIGNED NOT NULL UNIQUE,
+    duration INT,
+    stream_url VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_video_content FOREIGN KEY (content_id) REFERENCES content(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Insert sample movies
-INSERT INTO content (title, description, content_type, content_url, duration_minutes, thumbnail_url, genre, release_date, rating, language, director, is_available, is_premium, created_at) VALUES
-('The Matrix', 'A computer hacker learns about the true nature of his reality.', 'MOVIE', '/videos/matrix.mp4', 136, '/thumbs/matrix.jpg', 'Action', '1999-03-31 00:00:00', 8.7, 'English', 'Lana Wachowski', TRUE, TRUE, NOW()),
-('Inception', 'A skilled thief who steals corporate secrets through dream-sharing technology.', 'MOVIE', '/videos/inception.mp4', 148, '/thumbs/inception.jpg', 'Sci-Fi', '2010-07-16 00:00:00', 8.8, 'English', 'Christopher Nolan', TRUE, TRUE, NOW()),
-('Interstellar', 'A team of explorers travel through a wormhole in space to ensure humanity\'s survival.', 'MOVIE', '/videos/interstellar.mp4', 169, '/thumbs/interstellar.jpg', 'Sci-Fi', '2014-11-07 00:00:00', 8.6, 'English', 'Christopher Nolan', TRUE, TRUE, NOW()),
-('The Dark Knight', 'Batman faces the Joker, a criminal mastermind who wants to plunge Gotham into anarchy.', 'MOVIE', '/videos/darkknight.mp4', 152, '/thumbs/darkknight.jpg', 'Action', '2008-07-18 00:00:00', 9.0, 'English', 'Christopher Nolan', TRUE, TRUE, NOW());
+-- -----------------------------------------------------------------------------
+-- SECTION 3: SUBSCRIPTION & BILLING MANAGEMENT
+-- -----------------------------------------------------------------------------
 
--- Insert sample TV series
-INSERT INTO content (title, description, content_type, content_url, thumbnail_url, genre, release_date, rating, language, is_available, is_premium, created_at) VALUES
-('Breaking Bad', 'A high school chemistry teacher turns to cooking methamphetamine.', 'SERIES', '/videos/breakingbad.mp4', '/thumbs/breakingbad.jpg', 'Drama', '2008-01-20 00:00:00', 9.5, 'English', TRUE, TRUE, NOW()),
-('Game of Thrones', 'A battle for power amid feudal political intrigue and supernatural forces.', 'SERIES', '/videos/gameofthrones.mp4', '/thumbs/gameofthrones.jpg', 'Fantasy', '2011-04-17 00:00:00', 9.2, 'English', TRUE, TRUE, NOW());
+CREATE TABLE IF NOT EXISTS subscription_plan (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    plan_name VARCHAR(100) NOT NULL,
+    price DECIMAL(10, 2) NOT NULL,
+    duration_days INT NOT NULL,
+    features JSON,
+    is_active BOOLEAN DEFAULT TRUE,
+    version_id INT UNSIGNED DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    created_by VARCHAR(255),
+    updated_by VARCHAR(255)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Insert sample music
-INSERT INTO content (title, description, content_type, content_url, duration_minutes, thumbnail_url, genre, release_date, rating, language, is_available, is_premium, created_at) VALUES
-('Bohemian Rhapsody', 'Epic rock song by Queen', 'MUSIC', '/songs/bohemianrhapsody.mp3', 6, '/thumbs/queen.jpg', 'Rock', '1975-10-31 00:00:00', 9.0, 'English', TRUE, FALSE, NOW()),
-('Imagine', 'Iconic peace anthem by John Lennon', 'MUSIC', '/songs/imagine.mp3', 3, '/thumbs/lennon.jpg', 'Pop', '1971-09-09 00:00:00', 8.8, 'English', TRUE, FALSE, NOW());
+CREATE TABLE IF NOT EXISTS subscription (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT UNSIGNED NOT NULL,
+    plan_id BIGINT UNSIGNED NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    status ENUM('ACTIVE', 'EXPIRED', 'CANCELLED', 'PAST_DUE') DEFAULT 'ACTIVE',
+    version_id INT UNSIGNED DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    created_by VARCHAR(255),
+    updated_by VARCHAR(255),
+    CONSTRAINT fk_sub_user FOREIGN KEY (user_id) REFERENCES app_user(id),
+    CONSTRAINT fk_sub_plan FOREIGN KEY (plan_id) REFERENCES subscription_plan(id),
+    INDEX idx_user_id (user_id),
+    INDEX idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Insert sample ebooks
-INSERT INTO content (title, description, content_type, content_url, thumbnail_url, genre, release_date, rating, language, is_available, is_premium, created_at) VALUES
-('The Great Gatsby', 'A tragic love story set in the Jazz Age', 'EBOOK', '/ebooks/gatsby.pdf', '/thumbs/gatsby.jpg', 'Romance', '1925-04-10 00:00:00', 8.5, 'English', TRUE, FALSE, NOW()),
-('1984', 'A dystopian social science fiction novel by George Orwell', 'EBOOK', '/ebooks/1984.pdf', '/thumbs/1984.jpg', 'Sci-Fi', '1949-06-08 00:00:00', 8.9, 'English', TRUE, TRUE, NOW());
+-- Payment/Billing History Table
+CREATE TABLE IF NOT EXISTS payment_transaction (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    subscription_id BIGINT UNSIGNED NOT NULL,
+    user_id BIGINT UNSIGNED NOT NULL,
+    amount DECIMAL(10, 2) NOT NULL,
+    currency VARCHAR(3) DEFAULT 'USD',
+    payment_method ENUM('CREDIT_CARD', 'PAYPAL', 'STRIPE', 'APPLE_PAY') NOT NULL,
+    transaction_status ENUM('SUCCESS', 'FAILED', 'REFUNDED', 'PENDING') NOT NULL,
+    gateway_reference VARCHAR(255),
+    error_message TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(255),
+    CONSTRAINT fk_pay_sub FOREIGN KEY (subscription_id) REFERENCES subscription(id),
+    CONSTRAINT fk_pay_user FOREIGN KEY (user_id) REFERENCES app_user(id),
+    INDEX idx_pay_user (user_id),
+    INDEX idx_pay_status (transaction_status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- ============================================
--- Database Statistics Query
--- ============================================
--- SELECT 
---     COUNT(*) as total_content,
---     SUM(CASE WHEN is_available = TRUE THEN 1 ELSE 0 END) as available_content,
---     SUM(CASE WHEN is_premium = TRUE THEN 1 ELSE 0 END) as premium_content,
---     COUNT(DISTINCT content_type) as unique_types,
---     AVG(rating) as avg_rating
--- FROM content;
+-- -----------------------------------------------------------------------------
+-- SECTION 4: ACCESS CONTROL & DRM
+-- -----------------------------------------------------------------------------
 
--- ============================================
--- Useful Queries for Testing
--- ============================================
+CREATE TABLE IF NOT EXISTS access_control_log (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    content_id BIGINT UNSIGNED NOT NULL,
+    user_id BIGINT UNSIGNED NOT NULL,
+    access_status ENUM('GRANTED', 'DENIED_NO_SUBSCRIPTION', 'DENIED_DRM_VIOLATION') NOT NULL,
+    ip_address VARCHAR(45),
+    user_agent TEXT,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    content_title_snapshot VARCHAR(255), 
+    CONSTRAINT fk_acl_content FOREIGN KEY (content_id) REFERENCES content(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_acl_user FOREIGN KEY (user_id) REFERENCES app_user(id) ON DELETE RESTRICT,
+    INDEX idx_access_content (content_id),
+    INDEX idx_access_user_time (user_id, timestamp)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- -----------------------------------------------------------------------------
+-- SECTION 5: ANALYTICS & AUDIT
+-- -----------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS revenue_report (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    report_period_start DATE NOT NULL,
+    report_period_end DATE NOT NULL,
+    total_revenue DECIMAL(15, 2),
+    active_users_count INT,
+    metrics JSON, 
+    generated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(255),
+    updated_by VARCHAR(255),
+    INDEX idx_report_dates (report_period_start, report_period_end)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS system_audit_log (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    table_name VARCHAR(100) NOT NULL,
+    action ENUM('INSERT', 'UPDATE', 'DELETE') NOT NULL,
+    record_id BIGINT UNSIGNED NOT NULL,
+    old_value JSON,
+    new_value JSON,
+    performed_by VARCHAR(255),
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_audit_table (table_name),
+    INDEX idx_audit_timestamp (timestamp)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- -----------------------------------------------------------------------------
+-- SEED DATA
+-- -----------------------------------------------------------------------------
+
+INSERT INTO role (role_name, description, created_by) VALUES 
+('ADMIN', 'Full system access', 'SYSTEM'),
+('SUBSCRIBER', 'End user with streaming access', 'SYSTEM');
+
+INSERT INTO app_user (username, email, password_hash, created_by) VALUES 
+('admin_user', 'admin@streamhub.com', '$2y$12$6K8J3...', 'SYSTEM'),
+('jdoe_99', 'john.doe@gmail.com', '$2y$12$R7n2P...', 'SYSTEM');
+
+INSERT INTO user_role (user_id, role_id) VALUES (1, 1), (2, 2);
+
+INSERT INTO content (title, content_type, genre, language, created_by) VALUES 
+('The Great Voyage', 'VIDEO', 'Documentary', 'English', 'admin_user');
+
+INSERT INTO subscription_plan (plan_name, price, duration_days, created_by) VALUES 
+('Basic Monthly', 9.99, 30, 'SYSTEM');
+
+INSERT INTO subscription (user_id, plan_id, start_date, end_date, created_by) VALUES 
+(2, 1, CURDATE(), DATE_ADD(CURDATE(), INTERVAL 30 DAY), 'SYSTEM');
+
+INSERT INTO payment_transaction (subscription_id, user_id, amount, payment_method, transaction_status, gateway_reference, created_by) VALUES 
+(1, 2, 9.99, 'CREDIT_CARD', 'SUCCESS', 'TXN_12345ABC', 'SYSTEM');
+
+SET foreign_key_checks = 1;
 
 -- Get all movies sorted by rating
 -- SELECT * FROM content WHERE content_type = 'MOVIE' AND is_available = TRUE ORDER BY rating DESC;
